@@ -1,0 +1,118 @@
+version: '2'
+ 
+services:
+  nextcloud-mariadb:
+    container_name: nextcloud-mariadb
+    image: mariadb:latest
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    environment:
+      - "MYSQL_ROOT_PASSWORD=CHANGE_ME"
+    env_file:
+      - ./db.env
+    volumes:
+      - ./db:/var/lib/mysql
+    labels:
+      - "traefik.enable=false"
+
+  nextcloud-fpm:
+    container_name: nextcloud-fpm
+    image: nextcloud:fpm-alpine
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - nextcloud-mariadb
+    networks:
+      - default
+    environment:
+      - "MYSQL_HOST=nextcloud-mariadb"
+    env_file:
+      - ./db.env
+    volumes:
+      - ./app:/var/www/html
+      - ./apps:/var/www/html/custom_apps
+      - ./config:/var/www/html/config
+      - ./data:/var/www/html/data
+      - ./logs/nextcloud:/var/www/html/data/nextcloud.log
+    labels:
+      - "traefik.enable=false"
+
+  nextcloud-nginx:
+    container_name: nextcloud-nginx
+    image: nginx:latest
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - nextcloud-fpm
+    networks:
+      - default
+      - proxy
+    volumes:
+      - ./app:/var/www/html/:ro
+      - ./apps:/var/www/html/custom_apps:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro 
+      - ./nginx/logrotate/nginx:/etc/logrotate.d/nginx:ro
+      - ./logs/nginx:/var/log/nginx        
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nextcloud.entrypoints=http"
+      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.example.com`)"
+      - "traefik.http.middlewares.nextcloud-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.nextcloud.middlewares=portainer-https-redirect"
+      - "traefik.http.routers.nextcloud-secure.entrypoints=https"
+      - "traefik.http.routers.nextcloud-secure.rule=Host(`nextcloud.example.com`)"
+      - "traefik.http.routers.nextcloud-secure.tls=true"
+      - "traefik.http.routers.nextcloud-secure.tls.certresolver=http"
+      - "traefik.http.middlewares.nc-rep.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
+      - "traefik.http.middlewares.nc-rep.redirectregex.replacement=https://$$1/remote.php/dav/"
+      - "traefik.http.middlewares.nc-rep.redirectregex.permanent=true"
+      - "traefik.http.middlewares.nc-header.headers.customFrameOptionsValue=SAMEORIGIN"
+      - "traefik.http.routers.nextcloud-secure.middlewares=nc-rep,nc-header"
+      - "traefik.http.routers.nextcloud-secure.service=nextcloud"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+      - "traefik.docker.network=proxy" 
+
+  nextcloud-redis:
+    container_name: nextcloud-redis
+    image: redis:alpine
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks: 
+      - default
+    volumes:
+      - ./redis:/data
+    labels:
+      - "traefik.enable=false"
+
+  nextcloud-cron:
+    container_name: nextcloud-cron
+    image: nextcloud:fpm-alpine
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - nextcloud-mariadb
+      - nextcloud-fpm
+      - nextcloud-redis
+    entrypoint: /cron.sh
+    networks:
+      - default
+    volumes:
+      - ./app:/var/www/html
+      - ./apps:/var/www/html/custom_apps
+      - ./config:/var/www/html/config
+      - ./data:/var/www/html/data
+      - ./logs/nextcloud/nextcloud.log:/var/www/html/data/nextcloud.log
+    labels:
+      - "traefik.enable=false"
+
+networks:
+  proxy:
+    external: true
