@@ -64,7 +64,7 @@ services:
       - "traefik.http.routers.nextcloud.entrypoints=http"
       - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.example.com`)"
       - "traefik.http.middlewares.nextcloud-https-redirect.redirectscheme.scheme=https"
-      - "traefik.http.routers.nextcloud.middlewares=portainer-https-redirect"
+      - "traefik.http.routers.nextcloud.middlewares=nextcloud-https-redirect"
       - "traefik.http.routers.nextcloud-secure.entrypoints=https"
       - "traefik.http.routers.nextcloud-secure.rule=Host(`nextcloud.example.com`)"
       - "traefik.http.routers.nextcloud-secure.tls=true"
